@@ -1,0 +1,12 @@
+# Parent
+*.d
+*.exe
+*.ilk
+*.obj
+*.pdb
+
+# Output Files
+output/*
+
+# Vscode
+.vscode/*.json
