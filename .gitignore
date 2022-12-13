@@ -1,12 +1,6 @@
-# Parent
-*.d
-*.exe
-*.ilk
-*.obj
-*.pdb
-
-# Output Files
-output/*
+# Build
+build
+bin
 
 # Vscode
-.vscode/*.json
+.vscode

@@ -10,19 +10,42 @@
 
 class Histogram {
     public:
+    enum class Format {
+        YUV,
+        NV12
+    };
+
+    enum class Color {
+        Chromatic,
+        Grayscale
+    };
+
+    enum class Channel {
+        Y,
+        U,
+        V
+    };
+
+    enum class Detail {
+        Exclude,
+        Include
+    };
+
     Histogram();
-    Histogram(int imgWidth, int imgHeight, int blockWidth, int blockHeight, int numOfBins, bool showErrors);
+    Histogram(Format format, Color color, int imgWidth, int imgHeight, int blockWidth, int blockHeight, int numOfBins);
     void setupEnvironment();
     void printEnvironment();
     void writeInputBuffers(std::vector<int> imageVector);
     void writeInputBuffers(const void *ptr);
+    void setImageSize(int imgWidth, int imgHeight);
     
-    void calculateHistograms(bool detailed);
-    std::vector<float> getAverage(std::string channel);
-    std::vector<float> getVariance(std::string channel);
-    std::vector<int> getAverageHistogram(std::string channel);
-    std::vector<float> getVarianceHistogram(std::string channel);
-    double getElapsedTime(std::string channel);
+    void calculateHistograms(Detail detail, int blockWidth, int blockHeight, int numOfBins);
+    void calculateHistograms(Detail detail);
+    std::vector<float> getAverage(Channel channel);
+    std::vector<float> getVariance(Channel channel);
+    std::vector<int> getAverageHistogram(Channel channel);
+    std::vector<float> getVarianceHistogram(Channel channel);
+    double getElapsedTime(Channel channel);
 
     private:
     void calculateSizes();
@@ -39,6 +62,8 @@ class Histogram {
     int blockWidth;
     int blockHeight;
     int numOfBins;
+    Format format;
+    Color color;
 
     // Channel Details
     int ySize;

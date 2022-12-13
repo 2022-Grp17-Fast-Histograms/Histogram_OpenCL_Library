@@ -15,12 +15,8 @@ const bool DEBUG_MODE_CPU = true;
 const bool DEBUG_MODE_GPU = true;
 const bool SHOW_CPU_TEST = false;
 
-// Choose outputs to be generated
-//const bool EXPORT_AVERAGE_HISTOGRAM = true;                 // NEEDS AVERAGE HISTOGRAM TEST 1 FOR GPU HISTOGRAM
-//const bool EXPORT_VARIANCE_HISTOGRAM = true;                // NEEDS VARIANCE HISTOGRAM TEST 1 FOR GPU HISTOGRAM
-
 // Set path for input image
-const std::string FILEPATH = "input/DOTA2_I420_1920x1080.yuv"; 
+const std::string FILEPATH = "../input/DOTA2_I420_1920x1080.yuv"; 
 
 // Set width height
 const int IMG_WIDTH = 1920;
@@ -295,7 +291,7 @@ int main(int argc, char const *argv[])
     std::vector<float> vVarianceHistGPU(NUM_OF_BINS);
 
     // Create instance of Histogram Library
-    Histogram histogram(IMG_WIDTH, IMG_HEIGHT, BLOCK_WIDTH, BLOCK_HEIGHT, NUM_OF_BINS, true);
+    Histogram histogram(Histogram::Format::YUV, Histogram::Color::Chromatic, IMG_WIDTH, IMG_HEIGHT, BLOCK_WIDTH, BLOCK_HEIGHT, NUM_OF_BINS);
 
     // Setup Environment
     histogram.setupEnvironment();
@@ -305,29 +301,29 @@ int main(int argc, char const *argv[])
     histogram.writeInputBuffers(imageVector);
 
     // Calculate Histograms
-    histogram.calculateHistograms(true);
+    histogram.calculateHistograms(Histogram::Detail::Include);
 
     // Get output values
-    yAverageGPU = histogram.getAverage("Y");
-    uAverageGPU = histogram.getAverage("U");
-    vAverageGPU = histogram.getAverage("V");
+    yAverageGPU = histogram.getAverage(Histogram::Channel::Y);
+    uAverageGPU = histogram.getAverage(Histogram::Channel::U);
+    vAverageGPU = histogram.getAverage(Histogram::Channel::V);
 
-    yVarianceGPU = histogram.getVariance("Y");
-    uVarianceGPU = histogram.getVariance("U");
-    vVarianceGPU = histogram.getVariance("V");
+    yVarianceGPU = histogram.getVariance(Histogram::Channel::Y);
+    uVarianceGPU = histogram.getVariance(Histogram::Channel::U);
+    vVarianceGPU = histogram.getVariance(Histogram::Channel::V);
 
-    yAverageHistGPU = histogram.getAverageHistogram("Y");
-    uAverageHistGPU = histogram.getAverageHistogram("U");
-    vAverageHistGPU = histogram.getAverageHistogram("V");
+    yAverageHistGPU = histogram.getAverageHistogram(Histogram::Channel::Y);
+    uAverageHistGPU = histogram.getAverageHistogram(Histogram::Channel::U);
+    vAverageHistGPU = histogram.getAverageHistogram(Histogram::Channel::V);
 
-    yVarianceHistGPU = histogram.getVarianceHistogram("Y");
-    uVarianceHistGPU = histogram.getVarianceHistogram("U");
-    vVarianceHistGPU = histogram.getVarianceHistogram("V");
+    yVarianceHistGPU = histogram.getVarianceHistogram(Histogram::Channel::Y);
+    uVarianceHistGPU = histogram.getVarianceHistogram(Histogram::Channel::U);
+    vVarianceHistGPU = histogram.getVarianceHistogram(Histogram::Channel::V);
 
     // Create Timer Variables
-    double yElapsedTimeAllHistGPU = histogram.getElapsedTime("Y");
-    double uElapsedTimeAllHistGPU = histogram.getElapsedTime("U");
-    double vElapsedTimeAllHistGPU = histogram.getElapsedTime("V");
+    double yElapsedTimeAllHistGPU = histogram.getElapsedTime(Histogram::Channel::Y);
+    double uElapsedTimeAllHistGPU = histogram.getElapsedTime(Histogram::Channel::U);
+    double vElapsedTimeAllHistGPU = histogram.getElapsedTime(Histogram::Channel::V);
 
     // Validate Average Histogram Vectors
     std::cout << "\n---------------------------VALIDATING----------------------------\n\n";

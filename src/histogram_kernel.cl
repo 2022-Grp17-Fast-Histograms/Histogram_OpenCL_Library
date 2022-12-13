@@ -208,12 +208,3 @@ kernel void calculateHistogramsWithDetail(global const int *pixels, global const
         atomic_add_float(&varianceBins[interval], variance[bid]);
     }
 }
-
-kernel void calculateHistogram(global const float *input, global const int *numOfBins, global int *bins) {
-    // Get Blocal Id
-    int i = get_global_id(0);
-
-    // Calculate bin
-    int interval = ((int)input[i]*numOfBins[0])>>8;
-    atomic_inc(&bins[interval]);
-}

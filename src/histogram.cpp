@@ -3,22 +3,26 @@
 #include "histogram.hpp"
 
 Histogram::Histogram() {
-    imgWidth = 1920;
-    imgHeight = 1080;
-    blockWidth = 8;
-    blockHeight = 8;
-    numOfBins = 16;
-    showErrors = true;
+    this->imgWidth = 1920;
+    this->imgHeight = 1080;
+    this->blockWidth = 8;
+    this->blockHeight = 8;
+    this->numOfBins = 16;
+    this->showErrors = true;
+    this->format = Format::YUV;
+    this->color = Color::Chromatic;
     environmentSetUp = false;
 }
 
-Histogram::Histogram(int imgWidth, int imgHeight, int blockWidth, int blockHeight, int numOfBins, bool showErrors) {
+Histogram::Histogram(Format format, Color color, int imgWidth, int imgHeight, int blockWidth, int blockHeight, int numOfBins) {
     this->imgWidth = imgWidth;
     this->imgHeight = imgHeight;
     this->blockWidth = blockWidth;
     this->blockHeight = blockHeight;
     this->numOfBins = numOfBins;
-    this->showErrors = showErrors;
+    this->showErrors = true;
+    this->format = format;
+    this->color = color;
     environmentSetUp = false;
 }
 
@@ -251,7 +255,19 @@ void Histogram::calculateSizes() {
     vLocalRange = cl::NDRange(vBlockWidth/2, vBlockHeight/2);
 }
 
-void Histogram::calculateHistograms(bool detailed) {
+void Histogram::calculateHistograms(Detail detail, int blockWidth, int blockHeight, int numOfBins) {
+    // Change settings
+    this->blockWidth = blockWidth;
+    this->blockHeight = blockHeight;
+    this->numOfBins = numOfBins;
+    
+    calculateSizes();
+    createOutputBuffers();
+
+    calculateHistograms(detail);
+}
+
+void Histogram::calculateHistograms(Detail detail) {
     if (!environmentSetUp) {
         std::cout << "Environment not set up" << std::endl;
         return;
@@ -266,7 +282,7 @@ void Histogram::calculateHistograms(bool detailed) {
     cl::Kernel kernel;
 
     // Select Kernel
-    if (detailed) {
+    if (detail == Detail::Include) {
         kernel = histogramsDetailKernel;
     }
     else {
@@ -274,7 +290,7 @@ void Histogram::calculateHistograms(bool detailed) {
     }
     
     // Execute Y Channel
-    if (detailed) {
+    if (detail == Detail::Include) {
         kernel.setArg(0, yImageBuffer);
         kernel.setArg(1, numOfBinsBuffer);
         kernel.setArg(2, yAverageBuffer);
@@ -299,173 +315,181 @@ void Histogram::calculateHistograms(bool detailed) {
     }
     yElapsedTime = (1e-6) * (event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
     
-    // Execute U Channel
-    if (detailed) {
-        kernel.setArg(0, uImageBuffer);
-        kernel.setArg(1, numOfBinsBuffer);
-        kernel.setArg(2, uAverageBuffer);
-        kernel.setArg(3, uVarianceBuffer);
-        kernel.setArg(4, uAverageHistBuffer);
-        kernel.setArg(5, uVarianceHistBuffer);
-        kernel.setArg(6, uBlockSize * sizeof(int), NULL);
-        kernel.setArg(7, uBlockSize * sizeof(int), NULL);
-    }
-    else {
-        kernel.setArg(0, uImageBuffer);
-        kernel.setArg(1, numOfBinsBuffer);
-        kernel.setArg(2, uAverageHistBuffer);
-        kernel.setArg(3, uVarianceHistBuffer);
-        kernel.setArg(4, uBlockSize * sizeof(int), NULL);
-        kernel.setArg(5, uBlockSize * sizeof(int), NULL);
-    }
-    clError = commandQueue.enqueueNDRangeKernel(kernel, cl::NullRange, uGlobalRange, uLocalRange, NULL, &event);
-    event.wait();
-    if (showErrors && clError < 0) {
-        std::cout << "Execution U ERROR: " << clError << std::endl;
-    }
-    uElapsedTime = (1e-6) * (event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
+    if (color == Color::Chromatic) {
+        // Execute U Channel
+        if (detail == Detail::Include) {
+            kernel.setArg(0, uImageBuffer);
+            kernel.setArg(1, numOfBinsBuffer);
+            kernel.setArg(2, uAverageBuffer);
+            kernel.setArg(3, uVarianceBuffer);
+            kernel.setArg(4, uAverageHistBuffer);
+            kernel.setArg(5, uVarianceHistBuffer);
+            kernel.setArg(6, uBlockSize * sizeof(int), NULL);
+            kernel.setArg(7, uBlockSize * sizeof(int), NULL);
+        }
+        else {
+            kernel.setArg(0, uImageBuffer);
+            kernel.setArg(1, numOfBinsBuffer);
+            kernel.setArg(2, uAverageHistBuffer);
+            kernel.setArg(3, uVarianceHistBuffer);
+            kernel.setArg(4, uBlockSize * sizeof(int), NULL);
+            kernel.setArg(5, uBlockSize * sizeof(int), NULL);
+        }
+        clError = commandQueue.enqueueNDRangeKernel(kernel, cl::NullRange, uGlobalRange, uLocalRange, NULL, &event);
+        event.wait();
+        if (showErrors && clError < 0) {
+            std::cout << "Execution U ERROR: " << clError << std::endl;
+        }
+        uElapsedTime = (1e-6) * (event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
 
-    // Execute V Channel
-    if (detailed) {
-        kernel.setArg(0, vImageBuffer);
-        kernel.setArg(1, numOfBinsBuffer);
-        kernel.setArg(2, vAverageBuffer);
-        kernel.setArg(3, vVarianceBuffer);
-        kernel.setArg(4, vAverageHistBuffer);
-        kernel.setArg(5, vVarianceHistBuffer);
-        kernel.setArg(6, vBlockSize * sizeof(int), NULL);
-        kernel.setArg(7, vBlockSize * sizeof(int), NULL);
+        // Execute V Channel
+        if (detail == Detail::Include) {
+            kernel.setArg(0, vImageBuffer);
+            kernel.setArg(1, numOfBinsBuffer);
+            kernel.setArg(2, vAverageBuffer);
+            kernel.setArg(3, vVarianceBuffer);
+            kernel.setArg(4, vAverageHistBuffer);
+            kernel.setArg(5, vVarianceHistBuffer);
+            kernel.setArg(6, vBlockSize * sizeof(int), NULL);
+            kernel.setArg(7, vBlockSize * sizeof(int), NULL);
+        }
+        else {
+            kernel.setArg(0, vImageBuffer);
+            kernel.setArg(1, numOfBinsBuffer);
+            kernel.setArg(2, vAverageHistBuffer);
+            kernel.setArg(3, vVarianceHistBuffer);
+            kernel.setArg(4, vBlockSize * sizeof(int), NULL);
+            kernel.setArg(5, vBlockSize * sizeof(int), NULL);
+        }
+        clError = commandQueue.enqueueNDRangeKernel(kernel, cl::NullRange, vGlobalRange, vLocalRange, NULL, &event);
+        event.wait();
+        if (showErrors && clError < 0) {
+            std::cout << "Execution V ERROR: " << clError << std::endl;
+        }
+        vElapsedTime = (1e-6) * (event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
     }
-    else {
-        kernel.setArg(0, vImageBuffer);
-        kernel.setArg(1, numOfBinsBuffer);
-        kernel.setArg(2, vAverageHistBuffer);
-        kernel.setArg(3, vVarianceHistBuffer);
-        kernel.setArg(4, vBlockSize * sizeof(int), NULL);
-        kernel.setArg(5, vBlockSize * sizeof(int), NULL);
-    }
-    clError = commandQueue.enqueueNDRangeKernel(kernel, cl::NullRange, vGlobalRange, vLocalRange, NULL, &event);
-    event.wait();
-    if (showErrors && clError < 0) {
-        std::cout << "Execution V ERROR: " << clError << std::endl;
-    }
-    vElapsedTime = (1e-6) * (event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
-    
+
     // Read responsess
-    if (detailed) {
+    if (detail == Detail::Include) 
+    {
         clError = commandQueue.enqueueReadBuffer(yAverageBuffer, CL_TRUE, 0, yNumOfBlocks * sizeof(int), &yAverage[0], NULL, NULL);
         if (showErrors && clError < 0) {
             std::cout << "Reading yAverageBuffer ERROR: " << clError << std::endl;
         }
-        clError = commandQueue.enqueueReadBuffer(uAverageBuffer, CL_TRUE, 0, uNumOfBlocks * sizeof(int), &uAverage[0], NULL, NULL);
-        if (showErrors && clError < 0) {
-            std::cout << "Reading uAverageBuffer ERROR: " << clError << std::endl;
-        }
-        clError = commandQueue.enqueueReadBuffer(vAverageBuffer, CL_TRUE, 0, vNumOfBlocks * sizeof(int), &vAverage[0], NULL, NULL);
-        if (showErrors && clError < 0) {
-            std::cout << "Reading vAverageBuffer ERROR: " << clError << std::endl;
-        }
-
         clError = commandQueue.enqueueReadBuffer(yVarianceBuffer, CL_TRUE, 0, yNumOfBlocks * sizeof(int), &yVariance[0], NULL, NULL);
         if (showErrors && clError < 0) {
             std::cout << "Reading yVarianceBuffer ERROR: " << clError << std::endl;
         }
-        clError = commandQueue.enqueueReadBuffer(uVarianceBuffer, CL_TRUE, 0, uNumOfBlocks * sizeof(int), &uVariance[0], NULL, NULL);
-        if (showErrors && clError < 0) {
-            std::cout << "Reading uVarianceBuffer ERROR: " << clError << std::endl;
+        if (color == Color::Chromatic) {
+            clError = commandQueue.enqueueReadBuffer(uAverageBuffer, CL_TRUE, 0, uNumOfBlocks * sizeof(int), &uAverage[0], NULL, NULL);
+            if (showErrors && clError < 0) {
+                std::cout << "Reading uAverageBuffer ERROR: " << clError << std::endl;
+            }
+            clError = commandQueue.enqueueReadBuffer(uVarianceBuffer, CL_TRUE, 0, uNumOfBlocks * sizeof(int), &uVariance[0], NULL, NULL);
+            if (showErrors && clError < 0) {
+                std::cout << "Reading uVarianceBuffer ERROR: " << clError << std::endl;
+            }
+
+            clError = commandQueue.enqueueReadBuffer(vAverageBuffer, CL_TRUE, 0, vNumOfBlocks * sizeof(int), &vAverage[0], NULL, NULL);
+            if (showErrors && clError < 0) {
+                std::cout << "Reading vAverageBuffer ERROR: " << clError << std::endl;
+            }
+            clError = commandQueue.enqueueReadBuffer(vVarianceBuffer, CL_TRUE, 0, vNumOfBlocks * sizeof(int), &vVariance[0], NULL, NULL);
+            if (showErrors && clError < 0) {
+                std::cout << "Reading vVarianceBuffer ERROR: " << clError << std::endl;
+            }  
         }
-        clError = commandQueue.enqueueReadBuffer(vVarianceBuffer, CL_TRUE, 0, vNumOfBlocks * sizeof(int), &vVariance[0], NULL, NULL);
-        if (showErrors && clError < 0) {
-            std::cout << "Reading vVarianceBuffer ERROR: " << clError << std::endl;
-        }  
     }
+
     clError = commandQueue.enqueueReadBuffer(yAverageHistBuffer, CL_TRUE, 0, numOfBins * sizeof(int), &yAverageBins[0], NULL, NULL);
     if (showErrors && clError < 0) {
         std::cout << "Reading yAverageHistBuffer ERROR: " << clError << std::endl;
     }
-    clError = commandQueue.enqueueReadBuffer(uAverageHistBuffer, CL_TRUE, 0, numOfBins * sizeof(int), &uAverageBins[0], NULL, NULL);
-    if (showErrors && clError < 0) {
-        std::cout << "Reading uAverageHistBuffer ERROR: " << clError << std::endl;
-    }
-    clError = commandQueue.enqueueReadBuffer(vAverageHistBuffer, CL_TRUE, 0, numOfBins * sizeof(int), &vAverageBins[0], NULL, NULL);
-    if (showErrors && clError < 0) {
-        std::cout << "Reading vAverageHistBuffer ERROR: " << clError << std::endl;
-    }
-
     clError = commandQueue.enqueueReadBuffer(yVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &yVarianceBins[0], NULL, NULL);
     if (showErrors && clError < 0) {
         std::cout << "Reading yVarianceHistBuffer ERROR: " << clError << std::endl;
     }
-    clError = commandQueue.enqueueReadBuffer(uVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &uVarianceBins[0], NULL, NULL);
-    if (showErrors && clError < 0) {
-        std::cout << "Reading uVarianceHistBuffer ERROR: " << clError << std::endl;
-    }
-    clError = commandQueue.enqueueReadBuffer(vVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &vVarianceBins[0], NULL, NULL);
-    if (showErrors && clError < 0) {
-        std::cout << "Reading vVarianceHistBuffer ERROR: " << clError << std::endl;
+
+    if (color == Color::Chromatic) {
+        clError = commandQueue.enqueueReadBuffer(uAverageHistBuffer, CL_TRUE, 0, numOfBins * sizeof(int), &uAverageBins[0], NULL, NULL);
+        if (showErrors && clError < 0) {
+            std::cout << "Reading uAverageHistBuffer ERROR: " << clError << std::endl;
+        }
+        clError = commandQueue.enqueueReadBuffer(uVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &uVarianceBins[0], NULL, NULL);
+        if (showErrors && clError < 0) {
+            std::cout << "Reading uVarianceHistBuffer ERROR: " << clError << std::endl;
+        }
+        clError = commandQueue.enqueueReadBuffer(vAverageHistBuffer, CL_TRUE, 0, numOfBins * sizeof(int), &vAverageBins[0], NULL, NULL);
+        if (showErrors && clError < 0) {
+            std::cout << "Reading vAverageHistBuffer ERROR: " << clError << std::endl;
+        }
+        clError = commandQueue.enqueueReadBuffer(vVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &vVarianceBins[0], NULL, NULL);
+        if (showErrors && clError < 0) {
+            std::cout << "Reading vVarianceHistBuffer ERROR: " << clError << std::endl;
+        }
     }
 }
 
-std::vector<float> Histogram::getAverage(std::string channel) {
-    if (channel == "Y") {
+std::vector<float> Histogram::getAverage(Channel channel) {
+    if (channel == Channel::Y) {
         return yAverage;
     }
-    else if (channel == "U") {
+    else if (channel == Channel::U) {
         return uAverage;
     }
-    else if (channel == "V") {
+    else if (channel == Channel::V) {
         return vAverage;
     }
     return yAverage;
 }
 
-std::vector<float> Histogram::getVariance(std::string channel) {
-    if (channel == "Y") {
+std::vector<float> Histogram::getVariance(Channel channel) {
+    if (channel == Channel::Y) {
         return yVariance;
     }
-    else if (channel == "U") {
+    else if (channel == Channel::U) {
         return uVariance;
     }
-    else if (channel == "V") {
+    else if (channel == Channel::V) {
         return vVariance;
     }
     return yVariance;
 }
 
-std::vector<int> Histogram::getAverageHistogram(std::string channel) {
-    if (channel == "Y") {
+std::vector<int> Histogram::getAverageHistogram(Channel channel) {
+    if (channel == Channel::Y) {
         return yAverageBins;
     }
-    else if (channel == "U") {
+    else if (channel == Channel::U) {
         return uAverageBins;
     }
-    else if (channel == "V") {
+    else if (channel == Channel::V) {
         return vAverageBins;
     }
     return yAverageBins;
 }
 
-std::vector<float> Histogram::getVarianceHistogram(std::string channel) {
-    if (channel == "Y") {
+std::vector<float> Histogram::getVarianceHistogram(Channel channel) {
+    if (channel == Channel::Y) {
         return yVarianceBins;
     }
-    else if (channel == "U") {
+    else if (channel == Channel::U) {
         return uVarianceBins;
     }
-    else if (channel == "V") {
+    else if (channel == Channel::V) {
         return vVarianceBins;
     }
     return yVarianceBins;
 }
 
-double Histogram::getElapsedTime(std::string channel) {
-    if (channel == "Y") {
+double Histogram::getElapsedTime(Channel channel) {
+    if (channel == Channel::Y) {
         return yElapsedTime;
     }
-    else if (channel == "U") {
+    else if (channel == Channel::U) {
         return uElapsedTime;
     }
-    else if (channel == "V") {
+    else if (channel == Channel::V) {
         return vElapsedTime;
     }
     return yElapsedTime;
