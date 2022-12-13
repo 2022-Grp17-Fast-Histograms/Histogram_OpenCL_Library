@@ -24,7 +24,11 @@ Below are instructions to build it and run it from the project root folder.
 
 ```
 cmake -B build
-cmake --build ./Build --target histogram --config release
+cmake --build ./Build --target histogram_driver --config release
 cd bin
-histogram.exe
+histogram_driver.exe
 ```
+
+The CMake build will make a copy of the kernel file to the bin directory.
+
+The driver needs to be executed from the same directory as histogram_kernel.cl in order to run properly.
