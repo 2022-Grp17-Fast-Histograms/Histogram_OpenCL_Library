@@ -27,7 +27,7 @@ For Intel GPU:
 
 ```
 cmake -B build
-cmake --build ./Build --target histogram_driver --config release
+cmake --build ./build --target histogram_driver --config release
 cd bin
 histogram_driver.exe
 ```
@@ -36,7 +36,7 @@ For NVidia GPU:
 
 ```
 cmake -D NVIDIA=true -B build
-cmake --build ./Build --target histogram_driver --config release
+cmake --build ./build --target histogram_driver --config release
 cd bin
 histogram_driver.exe
 ```
