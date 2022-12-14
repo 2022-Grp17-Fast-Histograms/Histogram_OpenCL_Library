@@ -286,9 +286,9 @@ int main(int argc, char const *argv[])
     std::vector<int> yAverageHistGPU(NUM_OF_BINS);
     std::vector<int> uAverageHistGPU(NUM_OF_BINS);
     std::vector<int> vAverageHistGPU(NUM_OF_BINS);
-    std::vector<float> yVarianceHistGPU(NUM_OF_BINS);
-    std::vector<float> uVarianceHistGPU(NUM_OF_BINS);
-    std::vector<float> vVarianceHistGPU(NUM_OF_BINS);
+    std::vector<varhist> yVarianceHistGPU(NUM_OF_BINS);
+    std::vector<varhist> uVarianceHistGPU(NUM_OF_BINS);
+    std::vector<varhist> vVarianceHistGPU(NUM_OF_BINS);
 
     // Create instance of Histogram Library
     Histogram histogram(Histogram::Format::YUV, Histogram::Color::Chromatic, IMG_WIDTH, IMG_HEIGHT, BLOCK_WIDTH, BLOCK_HEIGHT, NUM_OF_BINS);
@@ -321,9 +321,7 @@ int main(int argc, char const *argv[])
     vVarianceHistGPU = histogram.getVarianceHistogram(Histogram::Channel::V);
 
     // Create Timer Variables
-    double yElapsedTimeAllHistGPU = histogram.getElapsedTime(Histogram::Channel::Y);
-    double uElapsedTimeAllHistGPU = histogram.getElapsedTime(Histogram::Channel::U);
-    double vElapsedTimeAllHistGPU = histogram.getElapsedTime(Histogram::Channel::V);
+    double elapsedTimeAllHistGPU = histogram.getElapsedTime();
 
     // Validate Average Histogram Vectors
     std::cout << "\n---------------------------VALIDATING----------------------------\n\n";
@@ -368,10 +366,7 @@ int main(int argc, char const *argv[])
     
 
     std::cout << "\n---------------------------PERFORMANCE----------------------------\n\n";
-    std::cout << "Elapsed time Channel Y (ms) = " << yElapsedTimeAllHistGPU << std::endl;
-    std::cout << "Elapsed time Channel U (ms) = " << uElapsedTimeAllHistGPU << std::endl;
-    std::cout << "Elapsed time Channel V (ms) = " << vElapsedTimeAllHistGPU << std::endl;
-    std::cout << "Elapsed time (Y + U + V) (ms) = " << yElapsedTimeAllHistGPU + uElapsedTimeAllHistGPU + vElapsedTimeAllHistGPU << std::endl;
+    std::cout << "Elapsed time (ms) = " << elapsedTimeAllHistGPU << std::endl;
     
  
     imageVector.clear();

@@ -3,14 +3,15 @@
 #include "histogram.hpp"
 
 Histogram::Histogram() {
-    this->imgWidth = 1920;
-    this->imgHeight = 1080;
-    this->blockWidth = 8;
-    this->blockHeight = 8;
-    this->numOfBins = 16;
-    this->showErrors = true;
-    this->format = Format::YUV;
-    this->color = Color::Chromatic;
+    imgWidth = 1920;
+    imgHeight = 1080;
+    blockWidth = 8;
+    blockHeight = 8;
+    numOfBins = 16;
+    format = Format::YUV;
+    color = Color::Chromatic;
+    showErrors = false;
+    elapsedTime = 0;
     environmentSetUp = false;
 }
 
@@ -20,11 +21,27 @@ Histogram::Histogram(Format format, Color color, int imgWidth, int imgHeight, in
     this->blockWidth = blockWidth;
     this->blockHeight = blockHeight;
     this->numOfBins = numOfBins;
-    this->showErrors = true;
     this->format = format;
     this->color = color;
+    elapsedTime = 0;
+    showErrors = false;
     environmentSetUp = false;
 }
+
+Histogram::Histogram(const Histogram &o) {
+    imgWidth = o.imgWidth;
+    imgHeight = o.imgHeight;
+    blockWidth = o.blockWidth;
+    blockHeight = o.blockHeight;
+    numOfBins = o.numOfBins;
+    format = o.format;
+    color = o.color;
+    elapsedTime = 0;
+    showErrors = o.showErrors;
+    environmentSetUp = false;
+}
+
+Histogram::~Histogram() {}
 
 void Histogram::setupEnvironment() {
     // Get platform and device information
@@ -66,9 +83,18 @@ void Histogram::setupEnvironment() {
     // Load Kernels
     histogramsKernel = cl::Kernel(program, "calculateHistograms");
     histogramsDetailKernel = cl::Kernel(program, "calculateHistogramsWithDetail");
+    singleChannelKernel = cl::Kernel(program, "calculateHistogramsSingleChannel");
+    singleChannelDetailKernel = cl::Kernel(program, "calculateHistogramsSingleChannelWithDetail");
 
     calculateSizes();
+    createInputBuffers();
+    createOutputVectors();
+    createOutputBuffers();
 
+    environmentSetUp = true;
+}
+
+void Histogram::createOutputVectors() {
     // Initialize Output Vectors
     yAverage = std::vector<float>(yNumOfBlocks);
     uAverage = std::vector<float>(uNumOfBlocks);
@@ -79,97 +105,80 @@ void Histogram::setupEnvironment() {
     yAverageBins = std::vector<int>(numOfBins);
     uAverageBins = std::vector<int>(numOfBins);
     vAverageBins = std::vector<int>(numOfBins);
-    yVarianceBins = std::vector<float>(numOfBins);
-    uVarianceBins = std::vector<float>(numOfBins);
-    vVarianceBins = std::vector<float>(numOfBins);
-
-    createInputBuffers();
-    createOutputBuffers();
-
-    environmentSetUp = true;
+    yVarianceBins = std::vector<varhist>(numOfBins);
+    uVarianceBins = std::vector<varhist>(numOfBins);
+    vVarianceBins = std::vector<varhist>(numOfBins);
 }
 
 void Histogram::createInputBuffers() {
     // Initialize Input Buffers
-    yImageBuffer = cl::Buffer(context, CL_MEM_READ_ONLY, ySize * sizeof(int), NULL, &clError);
+    imageBuffer = cl::Buffer(context, CL_MEM_READ_ONLY, imageSize * sizeof(int), NULL, &clError);
     if (showErrors && clError < 0) {
-        std::cout << "Create yImageBuffer ERROR: " << clError << std::endl;
-    }
-    uImageBuffer = cl::Buffer(context, CL_MEM_READ_ONLY, uSize * sizeof(int), NULL, &clError);
-    if (showErrors && clError < 0) {
-        std::cout << "Create uImageBuffer ERROR: " << clError << std::endl;
-    }
-    vImageBuffer = cl::Buffer(context, CL_MEM_READ_ONLY, vSize * sizeof(int), NULL, &clError);
-    if (showErrors && clError < 0) {
-        std::cout << "Create vImageBuffer ERROR: " << clError << std::endl;
+        std::cout << "Create imageBuffer ERROR: " << clError << std::endl;
     }
     numOfBinsBuffer = cl::Buffer(context, CL_MEM_READ_ONLY, 1 * sizeof(int), NULL, &clError);
     if (showErrors && clError < 0) {
         std::cout << "Create numOfBinsBuffer ERROR: " << clError << std::endl;
     }
+    formatBuffer = cl::Buffer(context, CL_MEM_READ_ONLY, 1 * sizeof(int), NULL, &clError);
+    if (showErrors && clError < 0) {
+        std::cout << "Create formatBuffer ERROR: " << clError << std::endl;
+    }
 }
 
 void Histogram::writeInputBuffers(std::vector<int> imageVector) {
-    clError = commandQueue.enqueueWriteBuffer(yImageBuffer, CL_TRUE, 0, ySize * sizeof(int), &imageVector[0], NULL, NULL);            
+    clError = commandQueue.enqueueWriteBuffer(imageBuffer, CL_TRUE, 0, imageSize * sizeof(int), &imageVector[0], NULL, NULL);            
     if (showErrors && clError < 0) {
-        std::cout << "Write yImageBuffer ERROR: " << clError << std::endl;
-    }
-    clError = commandQueue.enqueueWriteBuffer(uImageBuffer, CL_TRUE, 0, uSize * sizeof(int), &imageVector[ySize], NULL, NULL);            
-    if (showErrors && clError < 0) {
-        std::cout << "Write Error ERROR: " << clError << std::endl;
-    }
-    clError = commandQueue.enqueueWriteBuffer(vImageBuffer, CL_TRUE, 0, vSize * sizeof(int), &imageVector[ySize + uSize], NULL, NULL);            
-    if (showErrors && clError < 0) {
-        std::cout << "Write vImageBuffer ERROR: " << clError << std::endl;
+        std::cout << "Write imageBuffer ERROR: " << clError << std::endl;
     }
     clError = commandQueue.enqueueWriteBuffer(numOfBinsBuffer, CL_TRUE, 0, 1 * sizeof(int), &numOfBins, NULL, NULL);            
     if (showErrors && clError < 0) {
         std::cout << "Write numOfBinsBuffer ERROR: " << clError << std::endl;
+    }
+    clError = commandQueue.enqueueWriteBuffer(formatBuffer, CL_TRUE, 0, 1 * sizeof(int), &format, NULL, NULL);            
+    if (showErrors && clError < 0) {
+        std::cout << "Write formatBuffer ERROR: " << clError << std::endl;
     }
 }
 
 void Histogram::writeInputBuffers(const void *ptr) {
-    clError = commandQueue.enqueueWriteBuffer(yImageBuffer, CL_TRUE, 0, ySize * sizeof(uint8_t), ptr, NULL, NULL);            
+    clError = commandQueue.enqueueWriteBuffer(imageBuffer, CL_TRUE, 0, imageSize * sizeof(int), ptr, NULL, NULL);            
     if (showErrors && clError < 0) {
-        std::cout << "Write yImageBuffer ERROR: " << clError << std::endl;
-    }
-    clError = commandQueue.enqueueWriteBuffer(uImageBuffer, CL_TRUE, 0, uSize * sizeof(uint8_t), (uint8_t*)ptr + ySize, NULL, NULL);            
-    if (showErrors && clError < 0) {
-        std::cout << "Write Error ERROR: " << clError << std::endl;
-    }
-    clError = commandQueue.enqueueWriteBuffer(vImageBuffer, CL_TRUE, 0, vSize * sizeof(uint8_t), (uint8_t*)ptr + ySize + uSize, NULL, NULL);            
-    if (showErrors && clError < 0) {
-        std::cout << "Write vImageBuffer ERROR: " << clError << std::endl;
+        std::cout << "Write imageBuffer ERROR: " << clError << std::endl;
     }
     clError = commandQueue.enqueueWriteBuffer(numOfBinsBuffer, CL_TRUE, 0, 1 * sizeof(int), &numOfBins, NULL, NULL);            
     if (showErrors && clError < 0) {
         std::cout << "Write numOfBinsBuffer ERROR: " << clError << std::endl;
     }
+    clError = commandQueue.enqueueWriteBuffer(formatBuffer, CL_TRUE, 0, 1 * sizeof(int), &format, NULL, NULL);            
+    if (showErrors && clError < 0) {
+        std::cout << "Write formatBuffer ERROR: " << clError << std::endl;
+    }
 }
 
 void Histogram::createOutputBuffers() {
-    yAverageBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, yNumOfBlocks * sizeof(int), NULL, &clError);
+    yAverageBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, yNumOfBlocks * sizeof(float), NULL, &clError);
     if (showErrors && clError < 0) {
         std::cout << "Create yAverageBuffer ERROR: " << clError << std::endl;
     }
-    uAverageBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, uNumOfBlocks * sizeof(int), NULL, &clError);
+    uAverageBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, uNumOfBlocks * sizeof(float), NULL, &clError);
     if (showErrors && clError < 0) {
         std::cout << "Create uAverageBuffer ERROR: " << clError << std::endl;
     }
-    vAverageBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, vNumOfBlocks * sizeof(int), NULL, &clError);
+    vAverageBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, vNumOfBlocks * sizeof(float), NULL, &clError);
     if (showErrors && clError < 0) {
         std::cout << "Create vAverageBuffer ERROR: " << clError << std::endl;
     }
 
-    yVarianceBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, yNumOfBlocks * sizeof(int), NULL, &clError);
+    yVarianceBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, yNumOfBlocks * sizeof(float), NULL, &clError);
     if (showErrors && clError < 0) {
         std::cout << "Create yAverageBuffer ERROR: " << clError << std::endl;
     }
-    uVarianceBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, uNumOfBlocks * sizeof(int), NULL, &clError);
+    uVarianceBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, uNumOfBlocks * sizeof(float), NULL, &clError);
     if (showErrors && clError < 0) {
         std::cout << "Create uVarianceBuffer ERROR: " << clError << std::endl;
     }
-    vVarianceBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, vNumOfBlocks * sizeof(int), NULL, &clError);
+    vVarianceBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, vNumOfBlocks * sizeof(float), NULL, &clError);
     if (showErrors && clError < 0) {
         std::cout << "Create vVarianceBuffer ERROR: " << clError << std::endl;
     }
@@ -187,15 +196,15 @@ void Histogram::createOutputBuffers() {
         std::cout << "Create vAverageHistBuffer ERROR: " << clError << std::endl;
     }
 
-    yVarianceHistBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, numOfBins * sizeof(int), NULL, &clError);
+    yVarianceHistBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, numOfBins * sizeof(varhist), NULL, &clError);
     if (showErrors && clError < 0) {
         std::cout << "Create yVarianceHistBuffer ERROR: " << clError << std::endl;
     }
-    uVarianceHistBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, numOfBins * sizeof(int), NULL, &clError);
+    uVarianceHistBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, numOfBins * sizeof(varhist), NULL, &clError);
     if (showErrors && clError < 0) {
         std::cout << "Create uVarianceHistBuffer ERROR: " << clError << std::endl;
     }
-    vVarianceHistBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, numOfBins * sizeof(int), NULL, &clError);
+    vVarianceHistBuffer = cl::Buffer(context, CL_MEM_READ_WRITE, numOfBins * sizeof(varhist), NULL, &clError);
     if (showErrors && clError < 0) {
         std::cout << "Create vVarianceHistBuffer ERROR: " << clError << std::endl;
     }
@@ -213,15 +222,15 @@ void Histogram::createOutputBuffers() {
     if (showErrors && clError < 0) {
         std::cout << "Reading v_AverageHistBuffer ERROR: " << clError << std::endl;
     }
-    clError = commandQueue.enqueueWriteBuffer(yVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &yVarianceBins[0], NULL, NULL);
+    clError = commandQueue.enqueueWriteBuffer(yVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(varhist), &yVarianceBins[0], NULL, NULL);
     if (showErrors && clError < 0) {
         std::cout << "Reading y_VarianceHistBuffer ERROR: " << clError << std::endl;
     }
-    clError = commandQueue.enqueueWriteBuffer(uVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &uVarianceBins[0], NULL, NULL);
+    clError = commandQueue.enqueueWriteBuffer(uVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(varhist), &uVarianceBins[0], NULL, NULL);
     if (showErrors && clError < 0) {
         std::cout << "Reading u_VarianceHistBuffer ERROR: " << clError << std::endl;
     }
-    clError = commandQueue.enqueueWriteBuffer(vVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &vVarianceBins[0], NULL, NULL);
+    clError = commandQueue.enqueueWriteBuffer(vVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(varhist), &vVarianceBins[0], NULL, NULL);
     if (showErrors && clError < 0) {
         std::cout << "Reading v_VarianceHistBuffer ERROR: " << clError << std::endl;
     }
@@ -231,6 +240,7 @@ void Histogram::calculateSizes() {
     ySize = imgWidth * imgHeight;
     uSize = (imgWidth/2) * (imgHeight/2);
     vSize = (imgWidth/2) * (imgHeight/2);
+    imageSize = ySize + uSize + vSize;
 
     yBlockWidth = blockWidth;
     yBlockHeight = blockHeight;
@@ -247,24 +257,16 @@ void Histogram::calculateSizes() {
     vBlockSize = vBlockWidth * vBlockHeight;
     vNumOfBlocks = ((imgWidth/2)/vBlockWidth) * ((imgHeight/2)/vBlockHeight);
 
-    yGlobalRange = cl::NDRange(adjustDimension(imgWidth/2, yBlockWidth/2), adjustDimension(imgHeight/2, yBlockHeight/2));
-    yLocalRange = cl::NDRange(yBlockWidth/2, yBlockHeight/2);
-    uGlobalRange = cl::NDRange(adjustDimension(imgWidth/4, uBlockWidth/2), adjustDimension(imgHeight/4, uBlockHeight/2));
-    uLocalRange = cl::NDRange(uBlockWidth/2, uBlockHeight/2);
-    vGlobalRange = cl::NDRange(adjustDimension(imgWidth/4, vBlockWidth/2), adjustDimension(imgHeight/4, vBlockHeight/2));
-    vLocalRange = cl::NDRange(vBlockWidth/2, vBlockHeight/2);
+    globalRange = cl::NDRange(adjustDimension(imgWidth/2, yBlockWidth/2), adjustDimension(imgHeight/2, yBlockHeight/2));
+    localRange = cl::NDRange(yBlockWidth/2, yBlockHeight/2);
 }
 
-void Histogram::calculateHistograms(Detail detail, int blockWidth, int blockHeight, int numOfBins) {
-    // Change settings
-    this->blockWidth = blockWidth;
-    this->blockHeight = blockHeight;
-    this->numOfBins = numOfBins;
-    
-    calculateSizes();
-    createOutputBuffers();
-
-    calculateHistograms(detail);
+void Histogram::calculateHistograms() {
+    if (!environmentSetUp) {
+        std::cout << "Environment not set up" << std::endl;
+        return;
+    }
+    calculateHistograms(Detail::Exclude);
 }
 
 void Histogram::calculateHistograms(Detail detail) {
@@ -274,127 +276,112 @@ void Histogram::calculateHistograms(Detail detail) {
     }
 
     // Reset Timers
-    yElapsedTime = 0;
-    uElapsedTime = 0;
-    vElapsedTime = 0;
+    elapsedTime = 0;
 
     cl::Event event;
     cl::Kernel kernel;
-
-    // Select Kernel
-    if (detail == Detail::Include) {
-        kernel = histogramsDetailKernel;
-    }
-    else {
-        kernel = histogramsKernel;
-    }
     
-    // Execute Y Channel
-    if (detail == Detail::Include) {
-        kernel.setArg(0, yImageBuffer);
-        kernel.setArg(1, numOfBinsBuffer);
-        kernel.setArg(2, yAverageBuffer);
-        kernel.setArg(3, yVarianceBuffer);
-        kernel.setArg(4, yAverageHistBuffer);
-        kernel.setArg(5, yVarianceHistBuffer);
-        kernel.setArg(6, yBlockSize * sizeof(int), NULL);
-        kernel.setArg(7, yBlockSize * sizeof(int), NULL);
+    // Set Kernel Args
+    if (color == Color::Chromatic) {
+        if (detail == Detail::Exclude) {
+            kernel = histogramsKernel;
+            kernel.setArg(0, imageBuffer);
+            kernel.setArg(1, numOfBinsBuffer);
+            kernel.setArg(2, formatBuffer);
+            kernel.setArg(3, yAverageHistBuffer);
+            kernel.setArg(4, yVarianceHistBuffer);
+            kernel.setArg(5, uAverageHistBuffer);
+            kernel.setArg(6, uVarianceHistBuffer);
+            kernel.setArg(7, vAverageHistBuffer);
+            kernel.setArg(8, vVarianceHistBuffer);
+            kernel.setArg(9, yBlockSize * sizeof(int), NULL);
+            kernel.setArg(10, yBlockSize * sizeof(int), NULL);
+            kernel.setArg(11, uBlockSize * sizeof(int), NULL);
+            kernel.setArg(12, uBlockSize * sizeof(int), NULL);
+            kernel.setArg(13, vBlockSize * sizeof(int), NULL);
+            kernel.setArg(14, vBlockSize * sizeof(int), NULL);
+        }
+        else {
+            kernel = histogramsDetailKernel;
+            kernel.setArg(0, imageBuffer);
+            kernel.setArg(1, numOfBinsBuffer);
+            kernel.setArg(2, formatBuffer);
+            kernel.setArg(3, yAverageBuffer);
+            kernel.setArg(4, yVarianceBuffer);
+            kernel.setArg(5, yAverageHistBuffer);
+            kernel.setArg(6, yVarianceHistBuffer);
+            kernel.setArg(7, uAverageBuffer);
+            kernel.setArg(8, uVarianceBuffer);
+            kernel.setArg(9, uAverageHistBuffer);
+            kernel.setArg(10, uVarianceHistBuffer);
+            kernel.setArg(11, vAverageBuffer);
+            kernel.setArg(12, vVarianceBuffer);
+            kernel.setArg(13, vAverageHistBuffer);
+            kernel.setArg(14, vVarianceHistBuffer);
+            kernel.setArg(15, yBlockSize * sizeof(int), NULL);
+            kernel.setArg(16, yBlockSize * sizeof(int), NULL);
+            kernel.setArg(17, uBlockSize * sizeof(int), NULL);
+            kernel.setArg(18, uBlockSize * sizeof(int), NULL);
+            kernel.setArg(19, vBlockSize * sizeof(int), NULL);
+            kernel.setArg(20, vBlockSize * sizeof(int), NULL);
+        }
     }
     else {
-        kernel.setArg(0, yImageBuffer);
-        kernel.setArg(1, numOfBinsBuffer);
-        kernel.setArg(2, yAverageHistBuffer);
-        kernel.setArg(3, yVarianceHistBuffer);
-        kernel.setArg(4, yBlockSize * sizeof(int), NULL);
-        kernel.setArg(5, yBlockSize * sizeof(int), NULL);
+        if (detail == Detail::Exclude) {
+            kernel = singleChannelKernel;
+            kernel.setArg(0, imageBuffer);
+            kernel.setArg(1, numOfBinsBuffer);
+            kernel.setArg(2, yAverageHistBuffer);
+            kernel.setArg(3, yVarianceHistBuffer);
+            kernel.setArg(4, yBlockSize * sizeof(int), NULL);
+            kernel.setArg(5, yBlockSize * sizeof(int), NULL);
+        }
+        else {
+            kernel = singleChannelDetailKernel;
+            kernel.setArg(0, imageBuffer);
+            kernel.setArg(1, numOfBinsBuffer);
+            kernel.setArg(2, yAverageBuffer);
+            kernel.setArg(3, yVarianceBuffer);
+            kernel.setArg(4, yAverageHistBuffer);
+            kernel.setArg(5, yVarianceHistBuffer);
+            kernel.setArg(6, yBlockSize * sizeof(int), NULL);
+            kernel.setArg(7, yBlockSize * sizeof(int), NULL);
+        }
     }
-    clError = commandQueue.enqueueNDRangeKernel(kernel, cl::NullRange, yGlobalRange, yLocalRange, NULL, &event);
+    clError = commandQueue.enqueueNDRangeKernel(kernel, cl::NullRange, globalRange, localRange, NULL, &event);
     event.wait();
     if (showErrors && clError < 0) {
-        std::cout << "Execution Y ERROR: " << clError << std::endl;
+        std::cout << "Execution ERROR: " << clError << std::endl;
     }
-    yElapsedTime = (1e-6) * (event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
+    elapsedTime = (1e-6) * (event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
     
-    if (color == Color::Chromatic) {
-        // Execute U Channel
-        if (detail == Detail::Include) {
-            kernel.setArg(0, uImageBuffer);
-            kernel.setArg(1, numOfBinsBuffer);
-            kernel.setArg(2, uAverageBuffer);
-            kernel.setArg(3, uVarianceBuffer);
-            kernel.setArg(4, uAverageHistBuffer);
-            kernel.setArg(5, uVarianceHistBuffer);
-            kernel.setArg(6, uBlockSize * sizeof(int), NULL);
-            kernel.setArg(7, uBlockSize * sizeof(int), NULL);
-        }
-        else {
-            kernel.setArg(0, uImageBuffer);
-            kernel.setArg(1, numOfBinsBuffer);
-            kernel.setArg(2, uAverageHistBuffer);
-            kernel.setArg(3, uVarianceHistBuffer);
-            kernel.setArg(4, uBlockSize * sizeof(int), NULL);
-            kernel.setArg(5, uBlockSize * sizeof(int), NULL);
-        }
-        clError = commandQueue.enqueueNDRangeKernel(kernel, cl::NullRange, uGlobalRange, uLocalRange, NULL, &event);
-        event.wait();
-        if (showErrors && clError < 0) {
-            std::cout << "Execution U ERROR: " << clError << std::endl;
-        }
-        uElapsedTime = (1e-6) * (event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
-
-        // Execute V Channel
-        if (detail == Detail::Include) {
-            kernel.setArg(0, vImageBuffer);
-            kernel.setArg(1, numOfBinsBuffer);
-            kernel.setArg(2, vAverageBuffer);
-            kernel.setArg(3, vVarianceBuffer);
-            kernel.setArg(4, vAverageHistBuffer);
-            kernel.setArg(5, vVarianceHistBuffer);
-            kernel.setArg(6, vBlockSize * sizeof(int), NULL);
-            kernel.setArg(7, vBlockSize * sizeof(int), NULL);
-        }
-        else {
-            kernel.setArg(0, vImageBuffer);
-            kernel.setArg(1, numOfBinsBuffer);
-            kernel.setArg(2, vAverageHistBuffer);
-            kernel.setArg(3, vVarianceHistBuffer);
-            kernel.setArg(4, vBlockSize * sizeof(int), NULL);
-            kernel.setArg(5, vBlockSize * sizeof(int), NULL);
-        }
-        clError = commandQueue.enqueueNDRangeKernel(kernel, cl::NullRange, vGlobalRange, vLocalRange, NULL, &event);
-        event.wait();
-        if (showErrors && clError < 0) {
-            std::cout << "Execution V ERROR: " << clError << std::endl;
-        }
-        vElapsedTime = (1e-6) * (event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
-    }
 
     // Read responsess
     if (detail == Detail::Include) 
     {
-        clError = commandQueue.enqueueReadBuffer(yAverageBuffer, CL_TRUE, 0, yNumOfBlocks * sizeof(int), &yAverage[0], NULL, NULL);
+        clError = commandQueue.enqueueReadBuffer(yAverageBuffer, CL_TRUE, 0, yNumOfBlocks * sizeof(float), &yAverage[0], NULL, NULL);
         if (showErrors && clError < 0) {
             std::cout << "Reading yAverageBuffer ERROR: " << clError << std::endl;
         }
-        clError = commandQueue.enqueueReadBuffer(yVarianceBuffer, CL_TRUE, 0, yNumOfBlocks * sizeof(int), &yVariance[0], NULL, NULL);
+        clError = commandQueue.enqueueReadBuffer(yVarianceBuffer, CL_TRUE, 0, yNumOfBlocks * sizeof(float), &yVariance[0], NULL, NULL);
         if (showErrors && clError < 0) {
             std::cout << "Reading yVarianceBuffer ERROR: " << clError << std::endl;
         }
         if (color == Color::Chromatic) {
-            clError = commandQueue.enqueueReadBuffer(uAverageBuffer, CL_TRUE, 0, uNumOfBlocks * sizeof(int), &uAverage[0], NULL, NULL);
+            clError = commandQueue.enqueueReadBuffer(uAverageBuffer, CL_TRUE, 0, uNumOfBlocks * sizeof(float), &uAverage[0], NULL, NULL);
             if (showErrors && clError < 0) {
                 std::cout << "Reading uAverageBuffer ERROR: " << clError << std::endl;
             }
-            clError = commandQueue.enqueueReadBuffer(uVarianceBuffer, CL_TRUE, 0, uNumOfBlocks * sizeof(int), &uVariance[0], NULL, NULL);
+            clError = commandQueue.enqueueReadBuffer(uVarianceBuffer, CL_TRUE, 0, uNumOfBlocks * sizeof(float), &uVariance[0], NULL, NULL);
             if (showErrors && clError < 0) {
                 std::cout << "Reading uVarianceBuffer ERROR: " << clError << std::endl;
             }
 
-            clError = commandQueue.enqueueReadBuffer(vAverageBuffer, CL_TRUE, 0, vNumOfBlocks * sizeof(int), &vAverage[0], NULL, NULL);
+            clError = commandQueue.enqueueReadBuffer(vAverageBuffer, CL_TRUE, 0, vNumOfBlocks * sizeof(float), &vAverage[0], NULL, NULL);
             if (showErrors && clError < 0) {
                 std::cout << "Reading vAverageBuffer ERROR: " << clError << std::endl;
             }
-            clError = commandQueue.enqueueReadBuffer(vVarianceBuffer, CL_TRUE, 0, vNumOfBlocks * sizeof(int), &vVariance[0], NULL, NULL);
+            clError = commandQueue.enqueueReadBuffer(vVarianceBuffer, CL_TRUE, 0, vNumOfBlocks * sizeof(float), &vVariance[0], NULL, NULL);
             if (showErrors && clError < 0) {
                 std::cout << "Reading vVarianceBuffer ERROR: " << clError << std::endl;
             }  
@@ -405,7 +392,7 @@ void Histogram::calculateHistograms(Detail detail) {
     if (showErrors && clError < 0) {
         std::cout << "Reading yAverageHistBuffer ERROR: " << clError << std::endl;
     }
-    clError = commandQueue.enqueueReadBuffer(yVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &yVarianceBins[0], NULL, NULL);
+    clError = commandQueue.enqueueReadBuffer(yVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(varhist), &yVarianceBins[0], NULL, NULL);
     if (showErrors && clError < 0) {
         std::cout << "Reading yVarianceHistBuffer ERROR: " << clError << std::endl;
     }
@@ -415,15 +402,15 @@ void Histogram::calculateHistograms(Detail detail) {
         if (showErrors && clError < 0) {
             std::cout << "Reading uAverageHistBuffer ERROR: " << clError << std::endl;
         }
-        clError = commandQueue.enqueueReadBuffer(uVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &uVarianceBins[0], NULL, NULL);
-        if (showErrors && clError < 0) {
-            std::cout << "Reading uVarianceHistBuffer ERROR: " << clError << std::endl;
-        }
         clError = commandQueue.enqueueReadBuffer(vAverageHistBuffer, CL_TRUE, 0, numOfBins * sizeof(int), &vAverageBins[0], NULL, NULL);
         if (showErrors && clError < 0) {
             std::cout << "Reading vAverageHistBuffer ERROR: " << clError << std::endl;
         }
-        clError = commandQueue.enqueueReadBuffer(vVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(float), &vVarianceBins[0], NULL, NULL);
+        clError = commandQueue.enqueueReadBuffer(uVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(varhist), &uVarianceBins[0], NULL, NULL);
+        if (showErrors && clError < 0) {
+            std::cout << "Reading uVarianceHistBuffer ERROR: " << clError << std::endl;
+        }
+        clError = commandQueue.enqueueReadBuffer(vVarianceHistBuffer, CL_TRUE, 0, numOfBins * sizeof(varhist), &vVarianceBins[0], NULL, NULL);
         if (showErrors && clError < 0) {
             std::cout << "Reading vVarianceHistBuffer ERROR: " << clError << std::endl;
         }
@@ -469,7 +456,7 @@ std::vector<int> Histogram::getAverageHistogram(Channel channel) {
     return yAverageBins;
 }
 
-std::vector<float> Histogram::getVarianceHistogram(Channel channel) {
+std::vector<varhist> Histogram::getVarianceHistogram(Channel channel) {
     if (channel == Channel::Y) {
         return yVarianceBins;
     }
@@ -482,17 +469,8 @@ std::vector<float> Histogram::getVarianceHistogram(Channel channel) {
     return yVarianceBins;
 }
 
-double Histogram::getElapsedTime(Channel channel) {
-    if (channel == Channel::Y) {
-        return yElapsedTime;
-    }
-    else if (channel == Channel::U) {
-        return uElapsedTime;
-    }
-    else if (channel == Channel::V) {
-        return vElapsedTime;
-    }
-    return yElapsedTime;
+double Histogram::getElapsedTime() {
+    return elapsedTime;
 }
 
 void Histogram::printEnvironment() {
@@ -513,3 +491,39 @@ int Histogram::adjustDimension(int dimension, int blockDimension) {
     return dimension - (dimension % blockDimension);
 }
 
+void Histogram::setImageSize(int imgWidth, int imgHeight) {
+    // Change settings
+    this->imgWidth = imgWidth;
+    this->imgHeight = imgHeight;
+    
+    // Recalculate sizes and reset buffers
+    calculateSizes();
+    createInputBuffers();
+    createOutputVectors();
+    createOutputBuffers();
+
+}
+
+void Histogram::setBlockSize(int blockWidth, int blockHeight) {
+    // Change settings
+    this->blockWidth = blockWidth;
+    this->blockHeight = blockHeight;
+
+    // Recalculate sizes and reset buffers
+    calculateSizes();
+    createOutputVectors();
+    createOutputBuffers();
+}
+
+void Histogram::setNumofBins(int numOfBins) {
+    this->numOfBins = numOfBins;
+}
+
+void Histogram::setErrorLevel(ErrorLevel errorLevel) {
+    if (errorLevel == ErrorLevel::NoError) {
+        this->showErrors = false;
+    }
+    else {
+        this->showErrors = true;
+    }
+}

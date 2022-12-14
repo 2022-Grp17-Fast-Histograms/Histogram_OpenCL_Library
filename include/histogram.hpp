@@ -8,6 +8,12 @@
 #include <utility>
 #include <CL/opencl.hpp>
 
+#ifdef NVIDIA
+    typedef float varhist;
+#else
+    typedef int varhist;
+#endif
+
 class Histogram {
     public:
     enum class Format {
@@ -31,26 +37,38 @@ class Histogram {
         Include
     };
 
+    enum class ErrorLevel {
+        NoError,
+        ShowError
+    };
+
     Histogram();
     Histogram(Format format, Color color, int imgWidth, int imgHeight, int blockWidth, int blockHeight, int numOfBins);
+    Histogram(const Histogram &o);
+    ~Histogram();
+
     void setupEnvironment();
     void printEnvironment();
     void writeInputBuffers(std::vector<int> imageVector);
     void writeInputBuffers(const void *ptr);
     void setImageSize(int imgWidth, int imgHeight);
+    void setBlockSize(int blockWidth, int blockHeight);
+    void setNumofBins(int numOfBins);
+    void setErrorLevel(ErrorLevel errorLevel);
     
-    void calculateHistograms(Detail detail, int blockWidth, int blockHeight, int numOfBins);
+    void calculateHistograms();
     void calculateHistograms(Detail detail);
     std::vector<float> getAverage(Channel channel);
     std::vector<float> getVariance(Channel channel);
     std::vector<int> getAverageHistogram(Channel channel);
-    std::vector<float> getVarianceHistogram(Channel channel);
-    double getElapsedTime(Channel channel);
+    std::vector<varhist> getVarianceHistogram(Channel channel);
+    double getElapsedTime();
 
     private:
     void calculateSizes();
     void createInputBuffers();
     void createOutputBuffers();
+    void createOutputVectors();
     int adjustDimension(int dimension, int blockDimension);
 
     // Control
@@ -69,6 +87,7 @@ class Histogram {
     int ySize;
     int uSize;
     int vSize;
+    int imageSize;
 
     int yBlockWidth;
     int yBlockHeight;
@@ -101,21 +120,18 @@ class Histogram {
     // Kernels
     cl::Kernel histogramsKernel;
     cl::Kernel histogramsDetailKernel;
+    cl::Kernel singleChannelKernel;
+    cl::Kernel singleChannelDetailKernel;
 
     // Ranges
-    cl::NDRange yGlobalRange;
-    cl::NDRange uGlobalRange;
-    cl::NDRange vGlobalRange;
-    cl::NDRange yLocalRange;
-    cl::NDRange uLocalRange;
-    cl::NDRange vLocalRange;
+    cl::NDRange globalRange;
+    cl::NDRange localRange;
     cl::Event event;
 
     // Input Buffers
-    cl::Buffer yImageBuffer;
-    cl::Buffer uImageBuffer;
-    cl::Buffer vImageBuffer;
+    cl::Buffer imageBuffer;
     cl::Buffer numOfBinsBuffer;
+    cl::Buffer formatBuffer;
 
     // Output Buffers
     cl::Buffer yAverageBuffer;
@@ -141,12 +157,10 @@ class Histogram {
     std::vector<int> yAverageBins;
     std::vector<int> uAverageBins;
     std::vector<int> vAverageBins;
-    std::vector<float> yVarianceBins;
-    std::vector<float> uVarianceBins;
-    std::vector<float> vVarianceBins;
+    std::vector<varhist> yVarianceBins;
+    std::vector<varhist> uVarianceBins;
+    std::vector<varhist> vVarianceBins;
 
     // Timers
-    double yElapsedTime;
-    double uElapsedTime;
-    double vElapsedTime;
+    double elapsedTime;
 };

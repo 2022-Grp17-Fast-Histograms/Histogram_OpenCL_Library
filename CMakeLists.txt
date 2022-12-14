@@ -17,6 +17,11 @@ target_include_directories(histogram_driver PRIVATE ${PROJECT_SOURCE_DIR}/includ
 target_link_libraries(histogram_driver PRIVATE ${PROJECT_SOURCE_DIR}/lib/OpenCL.lib)
 
 # Copy kernel file to the output folder
-configure_file(${PROJECT_SOURCE_DIR}/src/histogram_kernel.cl ${PROJECT_SOURCE_DIR}/bin/histogram_kernel.cl COPYONLY)
+if(NVIDIA)
+	target_compile_definitions(histogram_driver PRIVATE NVIDIA)
+    configure_file(${PROJECT_SOURCE_DIR}/src/histogram_kernel_nvidia.cl ${PROJECT_SOURCE_DIR}/bin/histogram_kernel.cl COPYONLY)
+else()
+    configure_file(${PROJECT_SOURCE_DIR}/src/histogram_kernel_intel.cl ${PROJECT_SOURCE_DIR}/bin/histogram_kernel.cl COPYONLY)
+endif()
 
 include(CPack)
