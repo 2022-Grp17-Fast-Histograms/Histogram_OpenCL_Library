@@ -1,6 +1,15 @@
+/**
+ * @file histogram_kernel_nvidia.cl
+ * @brief Kernel file for NVIDIA GPU
+ */
 #pragma CL_VERSION_3_0
 
-//inline PTX atomic_add using float (Only works for nvidia)
+/**
+ * @brief Inline Atomic PTX to add values using floats (Only works for nvidia!)
+ * 
+ * @param p pointer to old value and where the result is going to be stored (old + new).
+ * @param val new value that will be added to old value.
+ */
 inline void atomic_add_float(volatile global float *p, float val)
 {
     float prev;
@@ -12,6 +21,17 @@ inline void atomic_add_float(volatile global float *p, float val)
     );
 }
 
+/**
+ * @brief Kernel function that calculates the histograms for a single channel.
+ * The kernel calculates the average and variance histograms based on the average and variance of each group (block of pixels).
+ * It accepts YUV/NV12 format for the Luma channel or YUV format for the Chroma channel.
+ * @param pixels pointer to raw image data.
+ * @param numOfBins the number of bins on the calculated histograms.
+ * @param averageBins the histogram data for the average.
+ * @param varianceBins the histogram data for the variance.
+ * @param blockSumAverage local memory for the accumulative sum (reduction) for the the average of the group.
+ * @param blockSumVariance local memory for the accumulative sum (reduction) for the the variance of the group.
+ */
 kernel void calculateHistogramsSingleChannel(global const int *pixels, global const int *numOfBins, global int *averageBins, global float *varianceBins, local int *blockSumAverage, local int *blockSumVariance) {    
     // Get local id
     int lid = get_local_linear_id();
@@ -121,6 +141,20 @@ kernel void calculateHistogramsSingleChannel(global const int *pixels, global co
     }
 }
 
+/**
+ * @brief Kernel function that calculates the histograms for a single channel with details.
+ * The kernel calculates the average and variance histograms based on the average and variance of each group (block of pixels).
+ * The kernel also returns details for the values for the average and variance of group (block of pixels) that were calculated.
+ * It accepts YUV/NV12 format for the Luma channel or YUV format for the Chroma channel.
+ * @param pixels pointer to raw image data.
+ * @param numOfBins the number of bins on the calculated histograms.
+ * @param average the average data for each group.
+ * @param variance the variance data for each group.
+ * @param averageBins the histogram data for the average.
+ * @param varianceBins the histogram data for the variance.
+ * @param blockSumAverage local memory for the accumulative sum (reduction) for the the average of the group.
+ * @param blockSumVariance local memory for the accumulative sum (reduction) for the the variance of the group.
+ */
 kernel void calculateHistogramsSingleChannelWithDetail(global const int *pixels, global const int *numOfBins, global float *average, global float *variance, global int *averageBins, global float *varianceBins, local int *blockSumAverage, local int *blockSumVariance) {
     // Get local id
     int lid = get_local_linear_id();
@@ -233,6 +267,26 @@ kernel void calculateHistogramsSingleChannelWithDetail(global const int *pixels,
     }
 }
 
+/**
+ * @brief Kernel function that calculates the histograms for all channels.
+ * The kernel calculates the average and variance histograms based on the average and variance of each group (block of pixels).
+ * It accepts YUV/NV12 format and performs the calculation for all channels (YUV).
+ * @param pixels pointer to raw image data.
+ * @param numOfBins the number of bins on the calculated histograms.
+ * @param format the format of the raw image data. 0 = YUV, 1 = NV12.
+ * @param yAverageBins the histogram data for the average for channel Y.
+ * @param yVarianceBins the histogram data for the variance for channel Y.
+ * @param uAverageBins the histogram data for the average for channel U.
+ * @param uVarianceBins the histogram data for the variance for channel U.
+ * @param vAverageBins the histogram data for the average for channel V.
+ * @param vVarianceBins the histogram data for the variance for channel V.
+ * @param yBlockSumAverage local memory for the accumulative sum (reduction) for the the average of the group for channel Y.
+ * @param yBlockSumVariance local memory for the accumulative sum (reduction) for the the variance of the group for channel Y.
+ * @param uBlockSumAverage local memory for the accumulative sum (reduction) for the the average of the group for channel U.
+ * @param uBlockSumVariance local memory for the accumulative sum (reduction) for the the variance of the group for channel U.
+ * @param vBlockSumAverage local memory for the accumulative sum (reduction) for the the average of the group for channel V.
+ * @param vBlockSumVariance local memory for the accumulative sum (reduction) for the the variance of the group for channel V.
+ */
 kernel void calculateHistograms(global const int *pixels, global const int *numOfBins, global const int *format, global int *yAverageBins, global float *yVarianceBins, global int *uAverageBins, global float *uVarianceBins, global int *vAverageBins, global float *vVarianceBins, local int *yBlockSumAverage, local int *yBlockSumVariance, local int *uBlockSumAverage, local int *uBlockSumVariance, local int *vBlockSumAverage, local int *vBlockSumVariance) {
     // Get local id
     int lid = get_local_linear_id();
@@ -413,6 +467,33 @@ kernel void calculateHistograms(global const int *pixels, global const int *numO
     }
 }
 
+/**
+ * @brief Kernel function that calculates the histograms for all channels with details.
+ * The kernel calculates the average and variance histograms based on the average and variance of each group (block of pixels).
+ * The kernel also returns details for the values for the average and variance of group (block of pixels) that were calculated.
+ * It accepts YUV/NV12 format and performs the calculation for all channels (YUV).
+ * @param pixels pointer to raw image data.
+ * @param numOfBins the number of bins on the calculated histograms.
+ * @param format the format of the raw image data. 0 = YUV, 1 = NV12.
+ * @param yAverage the average data for each group for channel Y.
+ * @param yVariance the variance data for each group for channel Y.
+ * @param yAverageBins the histogram data for the average for channel Y.
+ * @param yVarianceBins the histogram data for the variance for channel Y.
+ * @param uAverage the average data for each group for channel U.
+ * @param uVariance the variance data for each group for channel U.
+ * @param uAverageBins the histogram data for the average for channel U.
+ * @param uVarianceBins the histogram data for the variance for channel U.
+ * @param vAverage the average data for each group for channel V.
+ * @param vVariance the variance data for each group for channel V.
+ * @param vAverageBins the histogram data for the average for channel V.
+ * @param vVarianceBins the histogram data for the variance for channel V.
+ * @param yBlockSumAverage local memory for the accumulative sum (reduction) for the the average of the group for channel Y.
+ * @param yBlockSumVariance local memory for the accumulative sum (reduction) for the the variance of the group for channel Y.
+ * @param uBlockSumAverage local memory for the accumulative sum (reduction) for the the average of the group for channel U.
+ * @param uBlockSumVariance local memory for the accumulative sum (reduction) for the the variance of the group for channel U.
+ * @param vBlockSumAverage local memory for the accumulative sum (reduction) for the the average of the group for channel V.
+ * @param vBlockSumVariance local memory for the accumulative sum (reduction) for the the variance of the group for channel V.
+ */
 kernel void calculateHistogramsWithDetail(global const int *pixels, global const int *numOfBins, global const int *format, global float *yAverage, global float *yVariance, global int *yAverageBins, global float *yVarianceBins, global float *uAverage, global float *uVariance, global int *uAverageBins, global float *uVarianceBins, global float *vAverage, global float *vVariance, global int *vAverageBins, global float *vVarianceBins, local int *yBlockSumAverage, local int *yBlockSumVariance, local int *uBlockSumAverage, local int *uBlockSumVariance, local int *vBlockSumAverage, local int *vBlockSumVariance) {
     // Get local id
     int lid = get_local_linear_id();
